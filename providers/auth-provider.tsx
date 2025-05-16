@@ -11,9 +11,9 @@ import React, {
 } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { toast } from "sonner";
-import EstateLoading from "@/components/loading";
 import { Subscription, User, LoginInput, RegisterInput, UserStatus } from "@/types";
 import authApi from "@/services/auth.api";
+import { Loader2 } from "lucide-react";
 
 
 interface AuthState{
@@ -312,7 +312,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   if (!state.isInitialized && !isAuthPage) {
-    return <EstateLoading />;
+    return <Loader2 className="animate-spin" />
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
