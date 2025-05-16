@@ -18,7 +18,6 @@ interface UploadResult {
   etag: string;
   success: boolean;
   error?: string;
-  url?: string;
 }
 
 export const useDirectUpload = () => {
@@ -70,9 +69,11 @@ export const useDirectUpload = () => {
       
       // Step 1: Get presigned URL from backend
       const { data } = await fileApi.getPresignedUploadUrl({
-          fileName: file.name,
+          file_name: file.name,
           prefix: options.prefix,
-          isPublic: options.isPublic,
+          is_public: options.isPublic,
+          metadata: options.metadata,
+          file_type: file.type,
         });
 
       if (!data?.url || !data?.key) {
@@ -114,11 +115,14 @@ export const useDirectUpload = () => {
             const etag = xhr.getResponseHeader('ETag')?.replace(/"/g, '');
             resolve({ success: true, etag });
           } else {
-            reject(new Error(`Upload failed with status ${xhr.status}`));
+            console.error('Upload failed with status:', xhr.status);
+            console.error('Response text:', xhr.responseText);
+            reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.responseText}`));
           }
         });
         
         xhr.addEventListener('error', () => {
+          console.error('Network error during upload');
           reject(new Error('Network error occurred during upload'));
         });
         
@@ -127,10 +131,44 @@ export const useDirectUpload = () => {
         });
       });
 
-      // Start the upload
+      // Log the presigned URL for debugging (without sensitive parts)
+      console.log('Presigned URL received (domain):', url.split('?')[0]);
+      
+      // Parse the URL to extract parameters
+      const presignedUrl = new URL(url);
+      const contentType = file.type || 'application/octet-stream';
+      
+      // Check if the URL contains the expected parameters (like the NestJS implementation)
+      const hasMetadata = url.includes('x-amz-meta-originalname');
+      const hasChecksum = url.includes('x-amz-checksum');
+      
+      console.log('URL contains metadata:', hasMetadata);
+      console.log('URL contains checksum:', hasChecksum);
+      console.log('Content-Type:', contentType);
+      
+      // Start the upload - IMPORTANT: Use the exact URL without modifications
       xhr.open('PUT', url);
-      xhr.setRequestHeader('Content-Type', file.type);
-      // Add Origin header to help with CORS
+      
+      // Set Content-Type header - this is required for S3
+      xhr.setRequestHeader('Content-Type', contentType);
+      
+      // Check if we need to set the host header (usually not needed as browser sets it)
+      // This matches the NestJS implementation which only has 'host' in SignedHeaders
+      if (url.includes('SignedHeaders=host')) {
+        // Don't set host header - browser will do it automatically
+        console.log('Using host-only signed headers');
+      }
+      
+      // Check if ACL is in the signed headers and set it if needed
+      if (url.includes('x-amz-acl') || url.includes('SignedHeaders=content-type%3Bhost%3Bx-amz-acl')) {
+        xhr.setRequestHeader('x-amz-acl', 'public-read');
+        console.log('Setting ACL header: public-read');
+      }
+      
+      // Log all headers being sent
+      console.log('Sending file with Content-Type:', contentType);
+      
+      // Send the file without any modifications
       xhr.send(file);
 
       // Wait for upload to complete
@@ -145,18 +183,17 @@ export const useDirectUpload = () => {
 
       // Step 3: Confirm the upload with the backend
       const confirmation = await fileApi.confirmFileUpload({
-          key,
-          etag,
-      });
+        key,
+        etag,
+      }); 
 
-      if (!confirmation.data?.success) {
+      if (!confirmation.data.success) {
         throw new Error(
-          confirmation.data?.error || 'Failed to confirm upload'
+          confirmation.data.error || 'Failed to confirm upload'
         );
       }
 
-      const fileInfo = confirmation.data.fileInfo;
-      const fileUrl = `https://s3.amazonaws.com/${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}/${fileInfo.key}`;
+      const fileInfo = confirmation.data.file_info;
       
       // Update status in context
       fileUploadContext.setUploadStatus(fileId, 'success', key, undefined, etag);
@@ -171,7 +208,6 @@ export const useDirectUpload = () => {
         size: fileInfo.size,
         etag: fileInfo.etag,
         success: true,
-        url: fileUrl,
       };
     } catch (error) {
       console.error('Error uploading file:', error);

@@ -2,10 +2,11 @@ import api from "@/lib/axios";
 
 // Upload URL interfaces
 export interface GetPresignedUploadUrlInput {
-    fileName: string;
+    file_name: string;
     prefix?: string;
-    fileType?: string;
-    isPublic?: boolean;
+    file_type?: string;
+    is_public?: boolean;
+    metadata?: Record<string, string>;
 }
     
 export interface ConfirmFileUploadInput {
@@ -16,7 +17,7 @@ export interface ConfirmFileUploadInput {
 export interface ConfirmFileUploadResponse {
     key: string;
     success: boolean;
-    fileInfo: {
+    file_info: {
         key: string;
         size: number;
         etag: string;
@@ -27,7 +28,7 @@ export interface ConfirmFileUploadResponse {
 export interface GetPresignedUploadUrlResponse {
     url: string;
     key: string;
-    expiresAt: Date;
+    expires_at: Date;
 }
 
 // Sketch processing interfaces
@@ -64,7 +65,12 @@ export interface BatchProcessResponse {
 export const fileApi = {
     // File upload endpoints
     getPresignedUploadUrl: async (input: GetPresignedUploadUrlInput) => {
-        return api.post<GetPresignedUploadUrlResponse>(`/file/presigned-upload-url`, input);
+        // Ensure content type is always provided
+        const payload = {
+            ...input,
+            file_type: input.file_type || 'application/octet-stream'
+        };
+        return api.post<GetPresignedUploadUrlResponse>(`/file/presigned-upload-url`, payload);
     },
 
     confirmFileUpload: async (input: ConfirmFileUploadInput) => {

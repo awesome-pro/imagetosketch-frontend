@@ -1,9 +1,7 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
-import { useDirectUpload } from "@/hooks/useDirectUpload";
+import React, { useState, useCallback, useRef } from "react";
 import { useSketchProcessing } from "@/hooks/useSketchProcessing";
-import { FileUploader } from "@/components/ui/file-uploader";
 import { SketchOptions } from "@/components/ui/sketch-options";
 import { SketchResults } from "@/components/ui/sketch-results";
 import { Button } from "@/components/ui/button";
@@ -11,18 +9,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SketchMethod, SketchConfig } from "@/types";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { FileUpload, FileUploadProps } from "./ui/file-upload";
 
 export function Sketchify() {
-  // State for selected files and upload progress
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [uploadedFiles, setUploadedFiles] = useState<Array<{
-    name: string;
-    size: number;
-    key: string;
-    status?: "success" | "error";
-    error?: string;
-  }>>([]);
+  // Reference to the FileUpload component for direct method access
+  const fileUploadRef = useRef<any>(null);
   
   // State for sketch options
   const [sketchOptions, setSketchOptions] = useState<{
@@ -32,26 +23,17 @@ export function Sketchify() {
     method: SketchMethod.ADVANCED,
   });
   
-  // Hooks for file upload and sketch processing
-  const { uploadFiles, uploading, progress } = useDirectUpload();
+  // State to track processing state
+  const [processing, setProcessing] = useState(false);
+  
+  // Hook for sketch processing
   const { 
     batchProcessImages, 
     processImage, 
     files: sketchFiles, 
-    processing, 
+    processing: isProcessing, 
     clearFiles 
   } = useSketchProcessing();
-  
-  // Handle file selection
-  const handleFilesSelected = useCallback((files: File[]) => {
-    setSelectedFiles(files);
-  }, []);
-  
-  // Handle clearing files
-  const handleClearFiles = useCallback(() => {
-    setSelectedFiles([]);
-    setUploadedFiles([]);
-  }, []);
   
   // Handle sketch options change
   const handleOptionsChange = useCallback((options: {
@@ -61,71 +43,43 @@ export function Sketchify() {
     setSketchOptions(options);
   }, []);
   
-  // Handle upload and processing
-  const handleUploadAndProcess = useCallback(async () => {
-    if (selectedFiles.length === 0) {
-      toast.error("Please select files to upload");
+  // Handle upload complete and process images
+  const handleUploadComplete = useCallback(async (fileKeys: string[]) => {
+    if (fileKeys.length === 0) {
       return;
     }
     
     try {
-      // Upload files
-      const results = await uploadFiles(selectedFiles, {
-        prefix: "sketches",
-        isPublic: true,
-        onProgress: (progress) => {
+      setProcessing(true);
+      
+      // Prepare upload results for batch processing
+      const uploadResults = fileKeys.map((key) => {
+        const fileName = key.split("/").pop() || "Unknown";
+        
+        return {
+          key,
+          size: 0, // Size isn't critical for processing
+          name: fileName,
+        };
+      });
+      
+      // Process images
+      await batchProcessImages(uploadResults, {
+        method: sketchOptions.method,
+        config: sketchOptions.config,
+        onProgress: (progress: number) => {
           // Progress is handled by the hook
         },
       });
       
-      // Update uploaded files state
-      const uploadedFilesList = results.map((result) => ({
-        name: selectedFiles.find((f) => 
-          f.name === result.key.split("/").pop()?.replace(/^[^-]+-/, "") || ""
-        )?.name || result.key.split("/").pop() || "Unknown",
-        size: result.size,
-        key: result.key,
-        status: result.success ? "success" as const : "error" as const,
-        error: result.error,
-      }));
-      
-      setUploadedFiles(uploadedFilesList);
-      
-      // Process successful uploads
-      const successfulUploads = results.filter((r) => r.success);
-      
-      if (successfulUploads.length > 0) {
-        // Prepare upload results for batch processing
-        const uploadResults = successfulUploads.map((result) => {
-          const fileName = selectedFiles.find((f) => 
-            f.name === result.key.split("/").pop()?.replace(/^[^-]+-/, "") || ""
-          )?.name || result.key.split("/").pop() || "Unknown";
-          
-          return {
-            key: result.key,
-            size: result.size,
-            name: fileName,
-          };
-        });
-        
-        // Process images
-        await batchProcessImages(uploadResults, {
-          method: sketchOptions.method,
-          config: sketchOptions.config,
-          onProgress: (progress) => {
-            // Progress is handled by the hook
-          },
-        });
-        
-        toast.success(`Successfully processed ${successfulUploads.length} images`);
-      } else {
-        toast.error("No files were uploaded successfully");
-      }
+      toast.success(`Successfully processed ${fileKeys.length} images`);
     } catch (error) {
-      console.error("Error uploading and processing files:", error);
-      toast.error("Failed to upload and process files");
+      console.error("Error processing files:", error);
+      toast.error("Failed to process files");
+    } finally {
+      setProcessing(false);
     }
-  }, [selectedFiles, uploadFiles, batchProcessImages, sketchOptions]);
+  }, [batchProcessImages, sketchOptions]);
   
   // Handle retry for failed processing
   const handleRetry = useCallback(async (fileId: string) => {
@@ -137,6 +91,7 @@ export function Sketchify() {
     }
     
     try {
+      setProcessing(true);
       await processImage(
         file.originalKey,
         file.name,
@@ -151,6 +106,8 @@ export function Sketchify() {
     } catch (error) {
       console.error("Error reprocessing image:", error);
       toast.error("Failed to reprocess image");
+    } finally {
+      setProcessing(false);
     }
   }, [sketchFiles, processImage, sketchOptions]);
   
@@ -171,41 +128,21 @@ export function Sketchify() {
             </TabsList>
             
             <TabsContent value="upload" className="space-y-4">
-              <FileUploader
-                onFilesSelected={handleFilesSelected}
-                onClearFiles={handleClearFiles}
+              <FileUpload
+                onUploadComplete={handleUploadComplete}
                 maxFiles={10}
                 maxSize={5 * 1024 * 1024} // 5MB
-                disabled={uploading || processing}
-                uploading={uploading}
-                progress={0}
-                uploadedFiles={uploadedFiles.map((file) => ({
-                  name: file.name,
-                  size: file.size,
-                  status: file.status,
-                  error: file.error,
-                }))}
+                disabled={processing}
+                prefix="sketches"
+                isPublic={true}
+                metadata={{
+                  purpose: "sketch-processing",
+                  uploadedAt: new Date().toISOString(),
+                }}
+                showFileList={true}
+                autoUpload={false}
+                description="Upload images to convert to sketches. Maximum file size: 5MB. Accepted formats: JPG, PNG, WEBP"
               />
-              
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleUploadAndProcess}
-                  disabled={
-                    selectedFiles.length === 0 || 
-                    uploading || 
-                    processing
-                  }
-                >
-                  {(uploading || processing) && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  {uploading
-                    ? "Uploading..."
-                    : processing
-                    ? "Processing..."
-                    : "Upload & Process"}
-                </Button>
-              </div>
             </TabsContent>
             
             <TabsContent value="options">
@@ -237,7 +174,7 @@ export function Sketchify() {
               <Button
                 variant="outline"
                 onClick={clearFiles}
-                disabled={processing}
+                disabled={processing || isProcessing}
               >
                 Clear Results
               </Button>

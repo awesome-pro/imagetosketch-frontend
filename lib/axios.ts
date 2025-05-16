@@ -1,6 +1,6 @@
 import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from "axios";
 
-const baseURL = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api`
+const baseURL = `https://localhost:8000/api`
 
 // Create axios instance with default config
 export const api = axios.create({
@@ -37,7 +37,7 @@ const processQueue = (error: AxiosError | null) => {
 const refreshAuthToken = async () => {
   try {
     // Call the session refresh API endpoint
-    const response = await fetch('/api/auth/session', {
+    const response = await fetch('https://localhost:8000/api/auth/session', {
       method: 'GET',
       credentials: 'include',
       headers: {
