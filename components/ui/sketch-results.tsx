@@ -56,11 +56,9 @@ export function SketchResults({
           <Card key={file.id} className="overflow-hidden">
             <div className="aspect-square relative bg-muted">
               {file.status === "completed" && file.sketchUrl ? (
-                <Image
+                <img
                   src={file.sketchUrl}
                   alt={`Sketch of ${file.name}`}
-                  fill
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                   className="object-cover"
                 />
               ) : file.status === "processing" ? (

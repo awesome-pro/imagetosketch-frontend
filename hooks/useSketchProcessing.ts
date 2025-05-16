@@ -125,7 +125,7 @@ export const useSketchProcessing = () => {
       const { data } = await fileApi.batchProcessImages({
         input_keys: inputKeys,
         method: options.method,
-        config: options.config
+        config: options.config,
       });
       
       if (!data.success) {

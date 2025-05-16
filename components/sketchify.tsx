@@ -9,12 +9,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SketchMethod, SketchConfig } from "@/types";
 import { toast } from "sonner";
-import { FileUpload, FileUploadProps } from "./ui/file-upload";
+import { FileUpload } from "./ui/file-upload";
 
 export function Sketchify() {
-  // Reference to the FileUpload component for direct method access
-  const fileUploadRef = useRef<any>(null);
-  
   // State for sketch options
   const [sketchOptions, setSketchOptions] = useState<{
     method: SketchMethod;
@@ -46,6 +43,7 @@ export function Sketchify() {
   // Handle upload complete and process images
   const handleUploadComplete = useCallback(async (fileKeys: string[]) => {
     if (fileKeys.length === 0) {
+      toast.error("No files uploaded");
       return;
     }
     
@@ -68,14 +66,16 @@ export function Sketchify() {
         method: sketchOptions.method,
         config: sketchOptions.config,
         onProgress: (progress: number) => {
-          // Progress is handled by the hook
+          toast.loading(`Processing ${progress}%`, { duration: Infinity, id: "processing" });
         },
       });
+
+      toast.dismiss("processing");
       
       toast.success(`Successfully processed ${fileKeys.length} images`);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error processing files:", error);
-      toast.error("Failed to process files");
+      toast.error("Failed to process files", error.detail);
     } finally {
       setProcessing(false);
     }
