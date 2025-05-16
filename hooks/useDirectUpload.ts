@@ -68,19 +68,19 @@ export const useDirectUpload = () => {
       fileUploadContext.setUploadStatus(fileId, 'uploading');
       
       // Step 1: Get presigned URL from backend
-      const { data } = await fileApi.getPresignedUploadUrl({
-          file_name: file.name,
-          prefix: options.prefix,
-          is_public: options.isPublic,
-          metadata: options.metadata,
-          file_type: file.type,
-        });
+      const response = await fileApi.getPresignedUploadUrl({
+        file_name: file.name,
+        prefix: options.prefix,
+        is_public: options.isPublic,
+        metadata: options.metadata,
+        file_type: file.type || 'application/octet-stream',
+      });
 
-      if (!data?.url || !data?.key) {
+      if (!response.data?.presigned_url || !response.data?.key) {
         throw new Error('Failed to get presigned URL');
       }
 
-      const { url, key } = data;
+      const { presigned_url, key, file_url } = response.data;
 
       // Step 2: Upload file directly to S3 using the presigned URL
       const xhr = new XMLHttpRequest();
@@ -112,7 +112,8 @@ export const useDirectUpload = () => {
       const uploadPromise = new Promise<{ success: boolean; etag?: string }>((resolve, reject) => {
         xhr.addEventListener('load', () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            const etag = xhr.getResponseHeader('ETag')?.replace(/"/g, '');
+            // S3 returns the ETag in the response header
+            const etag = xhr.getResponseHeader('ETag')?.replace(/"/g, '') || '';
             resolve({ success: true, etag });
           } else {
             console.error('Upload failed with status:', xhr.status);
@@ -131,42 +132,17 @@ export const useDirectUpload = () => {
         });
       });
 
-      // Log the presigned URL for debugging (without sensitive parts)
-      console.log('Presigned URL received (domain):', url.split('?')[0]);
+      // Log the presigned URL for debugging (domain only, without query params)
+      console.log('Uploading to:', presigned_url.split('?')[0]);
       
-      // Parse the URL to extract parameters
-      const presignedUrl = new URL(url);
-      const contentType = file.type || 'application/octet-stream';
+      // CRITICAL FIX: Use the exact presigned URL without any modifications
+      xhr.open('PUT', presigned_url);
       
-      // Check if the URL contains the expected parameters (like the NestJS implementation)
-      const hasMetadata = url.includes('x-amz-meta-originalname');
-      const hasChecksum = url.includes('x-amz-checksum');
+      // CRITICAL FIX: Only set Content-Type header - S3 is extremely strict about the signed headers
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
       
-      console.log('URL contains metadata:', hasMetadata);
-      console.log('URL contains checksum:', hasChecksum);
-      console.log('Content-Type:', contentType);
-      
-      // Start the upload - IMPORTANT: Use the exact URL without modifications
-      xhr.open('PUT', url);
-      
-      // Set Content-Type header - this is required for S3
-      xhr.setRequestHeader('Content-Type', contentType);
-      
-      // Check if we need to set the host header (usually not needed as browser sets it)
-      // This matches the NestJS implementation which only has 'host' in SignedHeaders
-      if (url.includes('SignedHeaders=host')) {
-        // Don't set host header - browser will do it automatically
-        console.log('Using host-only signed headers');
-      }
-      
-      // Check if ACL is in the signed headers and set it if needed
-      if (url.includes('x-amz-acl') || url.includes('SignedHeaders=content-type%3Bhost%3Bx-amz-acl')) {
-        xhr.setRequestHeader('x-amz-acl', 'public-read');
-        console.log('Setting ACL header: public-read');
-      }
-      
-      // Log all headers being sent
-      console.log('Sending file with Content-Type:', contentType);
+      // IMPORTANT: Do NOT add any other headers that weren't included in the signature
+      // Adding unauthorized headers is one of the most common causes of 403 errors with presigned URLs
       
       // Send the file without any modifications
       xhr.send(file);
@@ -177,9 +153,6 @@ export const useDirectUpload = () => {
       if (!success) {
         throw new Error('Upload failed');
       }
-
-      // wait for some time to confirm the upload
-      await new Promise(resolve => setTimeout(resolve, 1050));
 
       // Step 3: Confirm the upload with the backend
       const confirmation = await fileApi.confirmFileUpload({
@@ -272,7 +245,6 @@ export const useDirectUpload = () => {
               key: '',
               size: 0,
               etag: '',
-              contentType: '',
               success: false,
               error: 'File not found in context',
             });

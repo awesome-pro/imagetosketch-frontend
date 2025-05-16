@@ -26,9 +26,10 @@ export interface ConfirmFileUploadResponse {
 }
 
 export interface GetPresignedUploadUrlResponse {
-    url: string;
+    presigned_url: string;
     key: string;
-    expires_at: Date;
+    file_url: string;
+    expires_in: number;
 }
 
 // Sketch processing interfaces
